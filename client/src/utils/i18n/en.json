@@ -1,0 +1,17 @@
+{
+  "chooseLanguage": "Choose Language",
+  "continue": "Continue",
+  "login": "Login",
+  "signup": "Sign Up",
+  "doctorLogin": "Doctor Login!",
+  "createAccount": "Create Patient Account",
+  "fullName": "Full Name",
+  "email": "Email Address",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "phone": "Phone Number",
+  "submit": "Create Account",
+  "alreadyAccount": "Already have an account?",
+  "loginHere": "Login here"
+}
+

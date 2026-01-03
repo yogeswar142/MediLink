@@ -1,0 +1,17 @@
+{
+  "chooseLanguage": "भाषा चुनें",
+  "continue": "जारी रखें",
+  "login": "लॉगिन",
+  "signup": "साइन अप",
+  "doctorLogin": "डॉक्टर लॉगिन!",
+  "createAccount": "रोगी खाता बनाएँ",
+  "fullName": "पूरा नाम",
+  "email": "ईमेल पता",
+  "password": "पासवर्ड",
+  "confirmPassword": "पासवर्ड की पुष्टि करें",
+  "phone": "मोबाइल नंबर",
+  "submit": "खाता बनाएँ",
+  "alreadyAccount": "पहले से खाता है?",
+  "loginHere": "यहाँ लॉगिन करें"
+}
+
