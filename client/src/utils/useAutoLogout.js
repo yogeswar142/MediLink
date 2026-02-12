@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-const IDLE_TIME = 15 * 60 * 1000; // 15 minutes
+const IDLE_TIME = 10*1000; //15 * 60 * 1000;  15 minutes
 
 export default function useAutoLogout() {
   const navigate = useNavigate();
