@@ -26,10 +26,14 @@ export default function VideoCall() {
   const [timer, setTimer] = useState(300); // 5 mins
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
+  const [waitingForReport, setWaitingForReport] = useState(false);
+  const [sessionRecord, setSessionRecord] = useState(null);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const chatEndRef = useRef(null);
+
+  const [cameraError, setCameraError] = useState("");
 
   useEffect(() => {
     const s = io(API_BASE_URL);
@@ -76,7 +80,9 @@ export default function VideoCall() {
     s.on("user-reconnected", ({ name }) => { setRemoteName(name); setDisconnected(false); setTimer(300); });
     s.on("chat-message", (message) => setChat(prev => [...prev, message]));
     s.on("session-ended", () => {
-      if (role === "patient") setShowRating(true);
+      if (role === "patient") {
+        setWaitingForReport(true);
+      }
     });
 
     peerConnection.ontrack = (event) => {
@@ -89,25 +95,35 @@ export default function VideoCall() {
       if (event.candidate) s.emit("ice-candidate", event.candidate);
     };
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localStream = stream;
         if(localVideoRef.current) localVideoRef.current.srcObject = stream;
         stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+        setCameraError("");
 
         s.emit("join-room", { roomId, userId, role, name: userName });
         if (role === 'doctor') s.emit("session-started");
-      })
-      .catch(err => {
-        console.log("Camera access denied or unvailable:", err);
+      } catch (err) {
+        console.log("Camera access denied or unavailable:", err);
+        setCameraError(err.message || "Permission Denied");
+        // Still join room so chat works
         s.emit("join-room", { roomId, userId, role, name: userName });
         if (role === 'doctor') s.emit("session-started");
-      });
+      }
+    };
+
+    startCamera();
+
+    // Attach startCamera to window so we can trigger it from a retry button outside useEffect
+    window.retryCameraAccess = startCamera;
 
     return () => {
       s.disconnect();
       if (peerConnection) peerConnection.close();
       if (localStream) localStream.getTracks().forEach(t => t.stop());
+      delete window.retryCameraAccess;
     };
   }, [roomId, role, userId, userName]);
 
@@ -131,6 +147,31 @@ export default function VideoCall() {
     setMsg("");
   };
 
+  // Poll for doctor's report when waiting
+  useEffect(() => {
+    if (!waitingForReport || !roomId) return;
+    
+    const token = localStorage.getItem("token");
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/records/session/${roomId}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success && data.ready && data.record) {
+          setSessionRecord(data.record);
+          setWaitingForReport(false);
+          setShowRating(true);
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        console.error("Poll error:", err);
+      }
+    }, 3000); // poll every 3 seconds
+    
+    return () => clearInterval(pollInterval);
+  }, [waitingForReport, roomId]);
+
   const endSession = () => {
     socket.emit("session-ended"); // notify the other party immediately!
     if (role === "doctor") {
@@ -140,14 +181,31 @@ export default function VideoCall() {
     }
   };
 
-  const submitRating = () => {
-    alert("Thank you for your feedback!");
-    const link = document.createElement('a');
-    link.href = '#';
-    link.download = 'prescription.pdf';
+  const downloadChatTranscript = () => {
+    if (chat.length === 0) return;
+    const lines = chat.map(m => `[${m.sender}]: ${m.text}`).join("\n");
+    const blob = new Blob([lines], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `medilink-chat-${roomId}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const submitRating = () => {
+    // Download prescription if available
+    if (sessionRecord?.prescriptionUrl) {
+      const link = document.createElement("a");
+      link.href = `${API_BASE_URL}${sessionRecord.prescriptionUrl}`;
+      link.target = "_blank";
+      link.download = "prescription";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
     navigate("/home");
   };
 
@@ -200,6 +258,19 @@ export default function VideoCall() {
           
           <div className="absolute bottom-6 right-6 w-32 sm:w-48 aspect-video bg-slate-800 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-600/50">
             <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            
+            {cameraError && (
+              <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center p-2 text-center">
+                <span className="text-red-400 text-xs sm:text-sm font-semibold mb-1">Camera Blocked</span>
+                <button 
+                  onClick={() => window.retryCameraAccess && window.retryCameraAccess()}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] sm:text-xs px-2 py-1 rounded shadow-lg transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
             <div className="absolute bottom-2 left-2 bg-slate-900/60 backdrop-blur px-2 py-0.5 rounded text-xs">
               You
             </div>
@@ -240,14 +311,50 @@ export default function VideoCall() {
         </div>
       </div>
 
+      {/* Waiting for Report Overlay */}
+      {waitingForReport && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass p-10 rounded-2xl w-full max-w-md text-center shadow-2xl mx-4">
+            <div className="w-16 h-16 border-4 border-slate-600 border-t-emerald-500 rounded-full animate-spin mx-auto mb-6"></div>
+            <h3 className="text-xl font-bold text-slate-100 mb-3">Session Ended</h3>
+            <p className="text-slate-400 mb-2">Your doctor is preparing your prescription and notes.</p>
+            <p className="text-slate-500 text-sm">Please wait — this page will update automatically.</p>
+          </div>
+        </div>
+      )}
+
       <Modal isOpen={showRating} title={t("rateSession") || "Post-Session Feedback"}>
         <div className="flex flex-col items-center">
           <p className="text-slate-300 mb-6 text-center">Your consultation with Dr. {remoteName} has ended. Please rate your experience.</p>
           <RatingStars rating={rating} setRating={setRating} />
+          
+          {sessionRecord?.doctorNotes && (
+            <div className="w-full mt-6 bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-xl">
+              <h4 className="text-xs uppercase text-indigo-400 font-bold mb-2 tracking-wider">Doctor's Notes</h4>
+              <p className="text-slate-300 text-sm whitespace-pre-wrap">{sessionRecord.doctorNotes}</p>
+            </div>
+          )}
+
           <div className="w-full mt-8 flex flex-col gap-3">
-             <button onClick={submitRating} className="btn-primary flex items-center justify-center gap-2">
-               <span>⬇️</span>
-               {t("downloadPrescription") || "Download Prescription & Finish"}
+             {sessionRecord?.prescriptionUrl && (
+               <a 
+                 href={`${API_BASE_URL}${sessionRecord.prescriptionUrl}`}
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 className="btn-primary flex items-center justify-center gap-2"
+               >
+                 <span>📥</span>
+                 Download Prescription
+               </a>
+             )}
+             {chat.length > 0 && (
+               <button onClick={downloadChatTranscript} className="w-full bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
+                 <span>💬</span>
+                 Download Chat Transcript
+               </button>
+             )}
+             <button onClick={submitRating} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-medium transition-colors mt-2">
+               Finish & Go Home
              </button>
           </div>
         </div>

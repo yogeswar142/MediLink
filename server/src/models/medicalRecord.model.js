@@ -17,6 +17,7 @@ const MedicalRecordSchema = new mongoose.Schema({
   diagnosis: String,
   prescriptionUrl: String,
   notes: String,
+  doctorNotes: String,
   sessionExperience: String,
   patientRating: Number,
 

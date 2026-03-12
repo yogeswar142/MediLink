@@ -21,6 +21,8 @@ export default function DoctorHome() {
   const [activeTab, setActiveTab] = useState("requests");
   const [prescribing, setPrescribing] = useState(null); // the consult request/appointment being completed
   const [prescriptionForm, setPrescriptionForm] = useState({ notes: "", experience: "" });
+  const [prescriptionFile, setPrescriptionFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -73,9 +75,27 @@ export default function DoctorHome() {
 
   const submitPrescription = async (e) => {
      e.preventDefault();
+     setSubmitting(true);
      
      const token = localStorage.getItem("token");
      try {
+       // Step 1: Upload prescription file if provided
+       let prescriptionUrl = null;
+       if (prescriptionFile) {
+         const formData = new FormData();
+         formData.append("prescription", prescriptionFile);
+         const uploadRes = await fetch(`${API_BASE_URL}/api/upload/prescription`, {
+           method: "POST",
+           headers: { "Authorization": `Bearer ${token}` },
+           body: formData
+         });
+         const uploadData = await uploadRes.json();
+         if (uploadData.success) {
+           prescriptionUrl = uploadData.url;
+         }
+       }
+
+       // Step 2: End session with notes + prescription URL
        const res = await fetch(`${API_BASE_URL}/api/records/session/end`, {
          method: "POST",
          headers: { 
@@ -84,19 +104,23 @@ export default function DoctorHome() {
          },
          body: JSON.stringify({ 
            roomId: prescribing.roomId, 
-           patientNotes: prescriptionForm.notes 
+           patientNotes: prescriptionForm.notes,
+           prescriptionUrl
          })
        });
        
        if (res.ok) {
          setPrescribing(null);
          setPrescriptionForm({ notes: "", experience: "" });
-         fetchDashboardData(); // Refresh the list without the completed one
+         setPrescriptionFile(null);
+         fetchDashboardData();
        } else {
          alert("Failed to complete session.");
        }
      } catch (err) {
        console.error("End session error:", err);
+     } finally {
+       setSubmitting(false);
      }
   }
 
@@ -252,11 +276,16 @@ export default function DoctorHome() {
             
             <div className="mb-6">
                <label className="block text-slate-300 font-medium mb-2">Upload Prescription (Image/PDF)</label>
-               <input type="file" className="text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-500/20 file:text-emerald-400 cursor-pointer" />
+               <input 
+                 type="file" 
+                 accept="image/*,.pdf"
+                 onChange={(e) => setPrescriptionFile(e.target.files[0])}
+                 className="text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-500/20 file:text-emerald-400 cursor-pointer" 
+               />
             </div>
 
-            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-lg text-white font-medium shadow-lg transition-colors">
-               Submit Prescription & Complete Session
+            <button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-lg text-white font-medium shadow-lg transition-colors disabled:opacity-50">
+               {submitting ? "Submitting..." : "Submit Prescription & Complete Session"}
             </button>
          </form>
       </Modal>

@@ -97,7 +97,7 @@ export default function HealthRecords() {
                   <div>
                     <h4 className="text-xs uppercase text-indigo-400 font-bold mb-2 tracking-wider drop-shadow-lg">Doctor Notes</h4>
                     <p className="text-indigo-100 bg-indigo-500/10 p-3 rounded-xl border border-indigo-500/20 text-sm whitespace-pre-wrap">
-                      {rec.doctorNotes || "No notes provided"}
+                      {rec.doctorNotes || rec.notes || "No notes provided"}
                     </p>
                   </div>
                 </div>
